@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Garma Automoción — Panel de Reservas</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0d1520; color: #e9edef; font-family: -apple-system, 'Segoe UI', sans-serif; min-height: 100vh; }
+  header { background: #111d2e; border-bottom: 1px solid #1a3050; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon { width: 40px; height: 40px; border-radius: 10px; background: linear-gradient(135deg, #1a3a5c, #2d6aa0); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .logo-text { font-size: 20px; font-weight: 700; }
+  .logo-sub { font-size: 12px; color: #8696a0; }
+  .live-badge { background: #1a3a5c; color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .live-dot { width: 7px; height: 7px; background: #7db8e0; border-radius: 50%; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+  .demo-btn { background: #0d2035; color: #2d6aa0; border: 1px solid #2d6aa0; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; text-decoration: none; transition: background 0.2s; }
+  .demo-btn:hover { background: #2d6aa0; color: white; }
+  main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
+  .stat { background: #111d2e; border: 1px solid #1a3050; border-radius: 12px; padding: 20px; }
+  .stat-label { font-size: 12px; color: #8696a0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value { font-size: 32px; font-weight: 700; }
+  .stat-sub { font-size: 12px; color: #2d6aa0; margin-top: 4px; }
+  .section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; }
+  .refresh-btn { background: #1a3050; border: none; color: #8696a0; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+  .refresh-btn:hover { color: #e9edef; }
+  .table-wrap { background: #111d2e; border: 1px solid #1a3050; border-radius: 12px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #0d1828; color: #8696a0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 12px 16px; text-align: left; }
+  td { padding: 14px 16px; border-top: 1px solid #1a3050; font-size: 14px; }
+  tr:hover td { background: #152035; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .badge-confirmada { background: #0d2035; color: #2d6aa0; }
+  .badge-cancelada { background: #3d1a1a; color: #ff6b6b; }
+  .action-btn { background: none; border: none; cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 6px; transition: background 0.2s; }
+  .action-btn:hover { background: #1a3050; }
+  .empty { padding: 60px 24px; text-align: center; color: #8696a0; }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: #111d2e; border: 1px solid #2d6aa0; color: #e9edef; padding: 12px 20px; border-radius: 10px; font-size: 14px; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <div class="logo-icon">🚗</div>
+    <div>
+      <div class="logo-text">Garma Automoción</div>
+      <div class="logo-sub">Panel de Reservas de Alquiler</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <div class="live-badge"><div class="live-dot"></div>Agente IA activo</div>
+    <a href="/index.html" class="demo-btn">💬 Ver demo chat</a>
+  </div>
+</header>
+<main>
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Total reservas</div><div class="stat-value" id="stat-total">0</div><div class="stat-sub">Gestionadas por IA</div></div>
+    <div class="stat"><div class="stat-label">Hoy</div><div class="stat-value" id="stat-hoy">0</div><div class="stat-sub">Nuevas reservas</div></div>
+    <div class="stat"><div class="stat-label">Confirmadas</div><div class="stat-value" id="stat-confirmadas">0</div><div class="stat-sub">Sin intervención humana</div></div>
+    <div class="stat"><div class="stat-label">Tasa éxito IA</div><div class="stat-value" id="stat-tasa">—</div><div class="stat-sub">Conversiones automáticas</div></div>
+  </div>
+  <div class="section-title">
+    Reservas de Alquiler
+    <button class="refresh-btn" onclick="cargarReservas()">↻ Actualizar</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Vehículo</th>
+          <th>Sede</th>
+          <th>Fecha inicio</th>
+          <th>Fecha fin</th>
+          <th>Cliente</th>
+          <th>Teléfono</th>
+          <th>Estado</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <div class="empty" id="empty">
+      <div class="empty-icon">🚗</div>
+      <div style="font-size:16px;margin-bottom:8px">Sin reservas todavía</div>
+      <div style="font-size:13px">Prueba el chat para crear una reserva de demo</div>
+    </div>
+  </div>
+</main>
+<div class="toast" id="toast"></div>
+<script>
+  let reservas = [];
+  const ADMIN_PWD = localStorage.getItem('admin_pwd') || prompt('Contraseña de administrador:');
+  if (ADMIN_PWD) localStorage.setItem('admin_pwd', ADMIN_PWD);
+  const adminHeaders = { 'Content-Type': 'application/json', 'x-admin-password': ADMIN_PWD };
+
+  async function cargarReservas() {
+    try {
+      const res = await fetch('/api/reservas');
+      reservas = await res.json();
+      renderTabla(); renderStats();
+    } catch(e) { console.error(e); }
+  }
+
+  function renderStats() {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const confirmadas = reservas.filter(r => r.estado === 'confirmada');
+    document.getElementById('stat-total').textContent = reservas.length;
+    document.getElementById('stat-hoy').textContent = reservas.filter(r => r.creadaEn?.startsWith(hoy)).length;
+    document.getElementById('stat-confirmadas').textContent = confirmadas.length;
+    document.getElementById('stat-tasa').textContent = reservas.length ? Math.round(confirmadas.length / reservas.length * 100) + '%' : '—';
+  }
+
+  function renderTabla() {
+    const tbody = document.getElementById('tbody');
+    const empty = document.getElementById('empty');
+    empty.style.display = reservas.length ? 'none' : 'block';
+    tbody.innerHTML = reservas.sort((a, b) => b.id - a.id).map(r => `
+      <tr>
+        <td><strong>${r.vehiculo || '—'}</strong></td>
+        <td>${r.sede || '—'}</td>
+        <td>${r.fecha_inicio || '—'}</td>
+        <td>${r.fecha_fin || '—'}</td>
+        <td>${r.nombre || '—'}</td>
+        <td>${r.telefono || '—'}</td>
+        <td><span class="badge badge-${r.estado}">${r.estado}</span></td>
+        <td>
+          ${r.estado !== 'cancelada' ? `<button class="action-btn" onclick="cancelar(${r.id})" title="Cancelar">❌</button>` : ''}
+          <button class="action-btn" onclick="eliminar(${r.id})" title="Eliminar">🗑️</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  async function cancelar(id) {
+    await fetch(`/api/reservas/${id}`, { method: 'PATCH', headers: adminHeaders, body: JSON.stringify({ estado: 'cancelada' }) });
+    toast('Reserva cancelada'); cargarReservas();
+  }
+
+  async function eliminar(id) {
+    if (!confirm('¿Eliminar esta reserva?')) return;
+    await fetch(`/api/reservas/${id}`, { method: 'DELETE', headers: adminHeaders });
+    toast('Reserva eliminada'); cargarReservas();
+  }
+
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg; el.style.display = 'block';
+    setTimeout(() => el.style.display = 'none', 2500);
+  }
+
+  cargarReservas();
+  setInterval(cargarReservas, 5000);
+</script>
+</body>
+</html>

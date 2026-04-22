@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Garma Automoción — Asistente IA</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d1520;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; font-family: -apple-system, 'Segoe UI', sans-serif; padding: 20px;
+  }
+  .phone-frame {
+    width: 375px; height: 750px; background: #f0f0f0; border-radius: 40px;
+    box-shadow: 0 40px 100px rgba(0,0,0,0.5), inset 0 0 0 2px #333;
+    overflow: hidden; display: flex; flex-direction: column; position: relative;
+  }
+  .header {
+    background: linear-gradient(135deg, #1a3a5c, #2d6aa0);
+    padding: 14px 16px 12px; display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .back-btn { color: white; font-size: 20px; opacity: 0.9; }
+  .avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: rgba(255,255,255,0.2);
+    display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0;
+  }
+  .contact-info { flex: 1; }
+  .contact-name { color: white; font-weight: 700; font-size: 15px; }
+  .contact-status { color: rgba(255,255,255,0.8); font-size: 12px; }
+  .header-icons { display: flex; gap: 16px; color: white; font-size: 18px; opacity: 0.9; }
+  .messages {
+    flex: 1; overflow-y: auto; padding: 12px; background: #ece5dd;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .msg {
+    max-width: 80%; padding: 8px 12px; border-radius: 12px;
+    font-size: 14px; line-height: 1.45; animation: fadeIn 0.2s ease;
+  }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+  .msg.in { background: white; color: #1a1a1a; align-self: flex-start; border-bottom-left-radius: 3px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .msg.out { background: #c8dff0; color: #1a1a1a; align-self: flex-end; border-bottom-right-radius: 3px; }
+  .msg-time { font-size: 11px; opacity: 0.5; margin-top: 3px; text-align: right; }
+  .reserva-badge {
+    background: #e8f5e9; color: #2e7d32; border-radius: 10px; padding: 8px 12px;
+    font-size: 13px; text-align: center; align-self: center;
+    border: 1px solid #a5d6a7; max-width: 90%;
+  }
+  #typing {
+    align-self: flex-start; background: white; padding: 10px 14px;
+    border-radius: 12px; border-bottom-left-radius: 3px; display: none;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  #typing span {
+    display: inline-block; width: 7px; height: 7px;
+    background: #2d6aa0; border-radius: 50%; margin: 0 2px; animation: bounce 1.2s infinite;
+  }
+  #typing span:nth-child(2) { animation-delay: 0.15s; }
+  #typing span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes bounce { 0%,60%,100%{transform:translateY(0);} 30%{transform:translateY(-5px);} }
+  .input-area {
+    background: #f0f0f0; padding: 8px 10px;
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  }
+  .input-wrap { flex: 1; background: white; border-radius: 24px; display: flex; align-items: center; padding: 0 14px; }
+  #msg-input { flex: 1; border: none; outline: none; font-size: 14px; padding: 10px 0; font-family: inherit; color: #1a1a1a; }
+  .send-btn {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: linear-gradient(135deg, #1a3a5c, #2d6aa0);
+    border: none; cursor: pointer; color: white; font-size: 16px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .demo-label {
+    position: absolute; top: 0; left: 0; right: 0;
+    background: rgba(26,58,92,0.95); color: white; font-size: 11px;
+    text-align: center; padding: 4px; letter-spacing: 0.5px;
+  }
+  .demo-label a { color: #c8dff0; text-decoration: none; margin-left: 8px; }
+</style>
+</head>
+<body>
+<div class="phone-frame">
+  <div class="demo-label">
+    🚗 DEMO — Agente IA Garma Automoción
+    <a href="/admin.html">→ Panel admin</a>
+  </div>
+  <div class="header" style="padding-top:26px">
+    <div class="back-btn">‹</div>
+    <div class="avatar">🚗</div>
+    <div class="contact-info">
+      <div class="contact-name">Garma Automoción</div>
+      <div class="contact-status">en línea · asistente IA</div>
+    </div>
+    <div class="header-icons">📞 ⋮</div>
+  </div>
+  <div class="messages" id="messages">
+    <div id="typing"><span></span><span></span><span></span></div>
+  </div>
+  <div class="input-area">
+    <div class="input-wrap">
+      <input id="msg-input" type="text" placeholder="Escribe un mensaje..." />
+    </div>
+    <button class="send-btn" id="send-btn">➤</button>
+  </div>
+</div>
+<script>
+  const SERVER = '';
+  const SESSION_ID = 's-' + Math.random().toString(36).slice(2, 9);
+  const msgs = document.getElementById('messages');
+  const typing = document.getElementById('typing');
+  const input = document.getElementById('msg-input');
+
+  function now() { return new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }); }
+
+  function addMsg(text, tipo) {
+    const div = document.createElement('div');
+    div.className = `msg ${tipo}`;
+    div.innerHTML = `${text}<div class="msg-time">${now()}</div>`;
+    msgs.insertBefore(div, typing);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function showTyping(v) { typing.style.display = v ? 'block' : 'none'; msgs.scrollTop = msgs.scrollHeight; }
+
+  async function saludar() {
+    showTyping(true);
+    await new Promise(r => setTimeout(r, 1200));
+    showTyping(false);
+    addMsg('¡Hola! 👋 Soy el asistente virtual de <strong>Garma Automoción</strong>. Puedo ayudarte con alquiler de vehículos, información sobre nuestros servicios o resolver cualquier consulta. ¿En qué te puedo ayudar?', 'in');
+  }
+
+  async function enviar() {
+    const msg = input.value.trim();
+    if (!msg) return;
+    input.value = '';
+    addMsg(msg, 'out');
+    showTyping(true);
+    try {
+      const res = await fetch(`${SERVER}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: SESSION_ID, mensaje: msg }),
+      });
+      const data = await res.json();
+      showTyping(false);
+      addMsg(data.respuesta, 'in');
+      if (data.reservaCreada) {
+        const r = data.reservaCreada;
+        const badge = document.createElement('div');
+        badge.className = 'reserva-badge';
+        badge.innerHTML = `✅ Reserva confirmada · ${r.vehiculo} · ${r.fecha_inicio} → ${r.fecha_fin} · ${r.sede}`;
+        msgs.insertBefore(badge, typing);
+        msgs.scrollTop = msgs.scrollHeight;
+      }
+    } catch {
+      showTyping(false);
+      addMsg('Ha ocurrido un error. Llámanos al <a href="tel:637558533">637 55 85 33</a>', 'in');
+    }
+  }
+
+  document.getElementById('send-btn').addEventListener('click', enviar);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') enviar(); });
+  saludar();
+</script>
+</body>
+</html>
