@@ -1,5 +1,5 @@
 (function () {
-  const SERVER = ''; // En producción: 'https://garma-demo-production.up.railway.app'
+  const SERVER = 'https://garma-demo-production.up.railway.app';
   const SESSION_ID = 'w-' + Math.random().toString(36).slice(2, 9);
 
   const styles = `
