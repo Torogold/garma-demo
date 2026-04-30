@@ -1,44 +1,55 @@
+import { setDefaultResultOrder } from 'dns';
+setDefaultResultOrder('ipv4first');
+
 import express from 'express';
 import cors from 'cors';
 import Groq from 'groq-sdk';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+
+if (!process.env.GROQ_API_KEY) {
+  console.error('❌ Falta GROQ_API_KEY. El agente no funcionará.');
+  process.exit(1);
+}
+if (!process.env.ADMIN_PASSWORD) {
+  console.warn('⚠️  ADMIN_PASSWORD no definido. Usando valor por defecto inseguro.');
+}
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const client = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
+app.set('trust proxy', 1);
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50kb' }));
 app.use(express.static(join(__dirname, 'public')));
 
-// ── Base de datos ─────────────────────────────────────────────────────────────
-const DB_PATH = join(__dirname, 'reservas.json');
-function loadReservas() {
-  if (!existsSync(DB_PATH)) return [];
-  return JSON.parse(readFileSync(DB_PATH, 'utf-8'));
-}
-function saveReservas(reservas) {
-  writeFileSync(DB_PATH, JSON.stringify(reservas, null, 2));
-}
-
-// ── Rate limiting ─────────────────────────────────────────────────────────────
+// ── Rate limiting con limpieza periódica ──────────────────────────────────────
 const rateLimits = new Map();
+const RATE_WINDOW_MS = 60 * 1000;
+const RATE_MAX = 20;
+
 function rateLimit(req, res, next) {
-  const ip = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || 'unknown';
   const now = Date.now();
-  const windowMs = 60 * 1000;
-  const maxRequests = 20;
-  if (!rateLimits.has(ip)) rateLimits.set(ip, []);
-  const timestamps = rateLimits.get(ip).filter(t => now - t < windowMs);
-  if (timestamps.length >= maxRequests) {
+  const timestamps = (rateLimits.get(ip) || []).filter(t => now - t < RATE_WINDOW_MS);
+  if (timestamps.length >= RATE_MAX) {
     return res.status(429).json({ error: 'Demasiadas peticiones. Espera un momento.' });
   }
   timestamps.push(now);
   rateLimits.set(ip, timestamps);
   next();
 }
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, timestamps] of rateLimits) {
+    const fresh = timestamps.filter(t => now - t < RATE_WINDOW_MS);
+    if (fresh.length === 0) rateLimits.delete(ip);
+    else rateLimits.set(ip, fresh);
+  }
+}, 5 * 60 * 1000).unref();
 
 // ── Kill switch ───────────────────────────────────────────────────────────────
 function checkActive(req, res, next) {
@@ -56,11 +67,58 @@ function requireAdmin(req, res, next) {
   next();
 }
 
-// ── Sesiones ──────────────────────────────────────────────────────────────────
+// ── Base de datos persistente ─────────────────────────────────────────────────
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const DB_PATH = join(DATA_DIR, 'reservas.json');
+const INSTRUCCIONES_PATH = join(DATA_DIR, 'instrucciones.json');
+
+function loadReservas() {
+  if (!existsSync(DB_PATH)) return [];
+  try { return JSON.parse(readFileSync(DB_PATH, 'utf-8')); } catch { return []; }
+}
+
+function saveReservas(reservas) {
+  const tmp = DB_PATH + '.tmp';
+  writeFileSync(tmp, JSON.stringify(reservas, null, 2));
+  renameSync(tmp, DB_PATH);
+}
+
+function loadInstrucciones() {
+  if (!existsSync(INSTRUCCIONES_PATH)) return [];
+  try { return JSON.parse(readFileSync(INSTRUCCIONES_PATH, 'utf-8')); } catch { return []; }
+}
+
+function saveInstrucciones(instrucciones) {
+  const tmp = INSTRUCCIONES_PATH + '.tmp';
+  writeFileSync(tmp, JSON.stringify(instrucciones, null, 2));
+  renameSync(tmp, INSTRUCCIONES_PATH);
+}
+
+// ── Sesiones con TTL ──────────────────────────────────────────────────────────
 const sesiones = new Map();
+const SESSION_TTL = 2 * 60 * 60 * 1000;
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, s] of sesiones) {
+    if (now - s.ts > SESSION_TTL) sesiones.delete(id);
+  }
+}, 30 * 60 * 1000).unref();
+
+function getHistorial(sessionId) {
+  if (!sesiones.has(sessionId)) sesiones.set(sessionId, { historial: [], ts: Date.now() });
+  const s = sesiones.get(sessionId);
+  s.ts = Date.now();
+  return s.historial;
+}
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `Eres el asistente virtual de Garma Automoción, empresa de automoción con 39 años de experiencia en Extremadura y Salamanca.
+
+REGLA #1 — NUNCA INVENTES NADA. Si no estás 100% seguro de un dato (disponibilidad, precios no listados, modelos concretos disponibles), responde: "Para confirmar ese dato lo mejor es que llames al 637 55 85 33".
+
+REGLA #2 — Habla en español natural y cercano. Tono profesional pero humano. Máximo 3-4 frases por respuesta.
+
+REGLA #3 — NUNCA calcules ni sugieras qué día de la semana cae una fecha concreta. Si el cliente pregunta si un día concreto es laborable, dile que el horario es de lunes a viernes y que confirme llamando si tiene dudas.
 
 ## SOBRE GARMA
 - Empresa familiar con ~39 años de experiencia en automoción
@@ -99,24 +157,56 @@ const SYSTEM_PROMPT = `Eres el asistente virtual de Garma Automoción, empresa d
 - **Renting:** contratos flexibles de 24 a 60 meses, deducible para empresas y autónomos
 
 ## GESTIÓN DE RESERVAS DE ALQUILER
-Cuando el cliente quiera reservar un vehículo de alquiler, recoge estos datos:
+Cuando el cliente quiera reservar un vehículo, recoge estos datos uno a uno:
 1. Tipo de vehículo o necesidad (turismo, furgoneta, combi...)
 2. Sede donde recoge el vehículo
-3. Fecha de inicio del alquiler (dd/mm/yyyy)
-4. Fecha de fin del alquiler (dd/mm/yyyy)
+3. Fecha de inicio — SIEMPRE pide DÍA, MES y AÑO completos en formato DD/MM/YYYY
+4. Fecha de fin — SIEMPRE pide DÍA, MES y AÑO completos en formato DD/MM/YYYY
 5. Nombre completo
 6. Teléfono de contacto
 
-Cuando tengas TODOS los datos confirma con:
+NUNCA aceptes fechas relativas ("mañana", "la semana que viene", "el lunes"). Si el cliente las dice, pregunta la fecha exacta: "¿Me puedes decir la fecha exacta? Por ejemplo: 15 de mayo de 2026."
+
+Cuando tengas TODOS los datos, escribe en una sola línea al inicio de tu respuesta:
 RESERVA_CONFIRMADA {"vehiculo":"...","sede":"...","fecha_inicio":"YYYY-MM-DD","fecha_fin":"YYYY-MM-DD","nombre":"...","telefono":"..."}
 Luego escribe un mensaje de confirmación natural.
 
-## REGLAS
-- Habla en español, tono profesional y cercano
-- Máximo 3-4 frases por respuesta
+## REGLAS ADICIONALES
 - Para consultas de taller o venta: da el teléfono de la sede más cercana o el general (637 55 85 33)
-- Si no sabes algo: "Para eso lo mejor es que llames al 637 55 85 33 en horario de atención"
+- Si no sabes algo: "Para eso lo mejor es que llames al 637 55 85 33 en horario de lunes a viernes"
 - Recuerda que fines de semana estamos cerrados`;
+
+function getContextoFecha() {
+  const dias = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+  const meses = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const hoy = new Date();
+  const diaTexto = `${dias[hoy.getDay()]} ${hoy.getDate()} de ${meses[hoy.getMonth()]} de ${hoy.getFullYear()}`;
+  return `\n\n## FECHA ACTUAL\nHoy es ${diaTexto}. Usa esto para orientar al cliente. NUNCA calcules tú qué día de la semana cae una fecha concreta.`;
+}
+
+function getSystemPrompt() {
+  const instrucciones = loadInstrucciones();
+  let prompt = SYSTEM_PROMPT + getContextoFecha();
+  if (instrucciones.length) {
+    const extra = instrucciones.map(i => `- ${i.texto}`).join('\n');
+    prompt += `\n\n## INSTRUCCIONES ADICIONALES DE GARMA (tienen prioridad sobre lo anterior)\n${extra}`;
+  }
+  return prompt;
+}
+
+// ── Validación de reserva ─────────────────────────────────────────────────────
+function validarReserva(datos) {
+  const errs = [];
+  const isoRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!datos.fecha_inicio || !isoRegex.test(datos.fecha_inicio)) errs.push('fecha_inicio inválida (debe ser YYYY-MM-DD)');
+  if (!datos.fecha_fin || !isoRegex.test(datos.fecha_fin)) errs.push('fecha_fin inválida (debe ser YYYY-MM-DD)');
+  if (datos.fecha_inicio && datos.fecha_fin && datos.fecha_inicio > datos.fecha_fin) errs.push('fecha_fin debe ser posterior a fecha_inicio');
+  if (!datos.nombre?.trim()) errs.push('nombre requerido');
+  if (!datos.telefono?.trim()) errs.push('teléfono requerido');
+  if (!datos.vehiculo?.trim()) errs.push('vehículo requerido');
+  if (!datos.sede?.trim()) errs.push('sede requerida');
+  return errs;
+}
 
 // ── Transferencia a humano ────────────────────────────────────────────────────
 const FRASES_TRANSFERENCIA = [
@@ -128,61 +218,16 @@ function quierePersonaReal(mensaje) {
   return FRASES_TRANSFERENCIA.some(f => mensaje.toLowerCase().includes(f));
 }
 
-// ── Email con Resend ──────────────────────────────────────────────────────────
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const EMAIL_NEGOCIO = process.env.EMAIL_NEGOCIO || 'gestion@garmaautomocion.com';
-
-async function enviarEmail({ to, subject, html }) {
-  if (!RESEND_API_KEY) return console.log('[Email] Sin RESEND_API_KEY, omitiendo');
-  const res = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: 'Agente IA <onboarding@resend.dev>', to, subject, html }),
-  });
-  const data = await res.json();
-  console.log('[Email]', to, '→', data.id || data.message);
-}
-
-async function notificarNuevaReserva(r) {
-  await enviarEmail({
-    to: EMAIL_NEGOCIO,
-    subject: `✅ Nueva reserva — ${r.nombre} · ${r.vehiculo}`,
-    html: `<div style="font-family:sans-serif;max-width:500px">
-      <h2 style="color:#1a3a5c">Nueva reserva de alquiler — Agente IA</h2>
-      <table style="width:100%;border-collapse:collapse;margin-top:16px">
-        <tr><td style="padding:8px;background:#f0f4f8;font-weight:bold">Vehículo</td><td style="padding:8px">${r.vehiculo}</td></tr>
-        <tr><td style="padding:8px;background:#f0f4f8;font-weight:bold">Sede</td><td style="padding:8px">${r.sede}</td></tr>
-        <tr><td style="padding:8px;background:#f0f4f8;font-weight:bold">Fecha inicio</td><td style="padding:8px">${r.fecha_inicio}</td></tr>
-        <tr><td style="padding:8px;background:#f0f4f8;font-weight:bold">Fecha fin</td><td style="padding:8px">${r.fecha_fin}</td></tr>
-        <tr><td style="padding:8px;background:#f0f4f8;font-weight:bold">Cliente</td><td style="padding:8px">${r.nombre}</td></tr>
-        <tr><td style="padding:8px;background:#f0f4f8;font-weight:bold">Teléfono</td><td style="padding:8px">${r.telefono}</td></tr>
-      </table>
-    </div>`,
-  });
-}
-
-async function notificarTransferencia(sessionId, historial) {
-  const resumen = historial.map(m => `${m.role === 'user' ? 'Cliente' : 'Agente'}: ${m.content}`).join('\n');
-  await enviarEmail({
-    to: EMAIL_NEGOCIO,
-    subject: `🔔 Cliente pide hablar con persona — sesión ${sessionId}`,
-    html: `<div style="font-family:sans-serif;max-width:600px">
-      <h2 style="color:#1a3a5c">Un cliente quiere hablar con vosotros</h2>
-      <pre style="background:#f9f9f9;padding:16px;border-radius:8px;white-space:pre-wrap">${resumen}</pre>
-    </div>`,
-  });
-}
-
 // ── Lógica del agente ─────────────────────────────────────────────────────────
+const reservasDuplicadas = new Set();
+
 async function chatConAgente(sessionId, mensaje) {
-  if (!sesiones.has(sessionId)) sesiones.set(sessionId, []);
-  const historial = sesiones.get(sessionId);
+  const historial = getHistorial(sessionId);
 
   if (quierePersonaReal(mensaje)) {
     historial.push({ role: 'user', content: mensaje });
     const respuesta = 'Entendido, voy a avisar al equipo para que contacten contigo. También puedes llamar directamente al 637 55 85 33 en horario de lunes a viernes.';
     historial.push({ role: 'assistant', content: respuesta });
-    notificarTransferencia(sessionId, historial).catch(console.error);
     return { respuesta, reservaCreada: null, transferencia: true };
   }
 
@@ -191,7 +236,7 @@ async function chatConAgente(sessionId, mensaje) {
   const response = await client.chat.completions.create({
     model: 'llama-3.3-70b-versatile',
     max_tokens: 500,
-    messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...historial],
+    messages: [{ role: 'system', content: getSystemPrompt() }, ...historial],
   });
 
   const respuesta = response.choices[0].message.content;
@@ -203,12 +248,24 @@ async function chatConAgente(sessionId, mensaje) {
       const jsonMatch = respuesta.match(/RESERVA_CONFIRMADA\s*(\{.*?\})/s);
       if (jsonMatch) {
         const datos = JSON.parse(jsonMatch[1]);
-        const reservas = loadReservas();
-        const nueva = { id: Date.now(), ...datos, estado: 'confirmada', creadaEn: new Date().toISOString(), sessionId };
-        reservas.push(nueva);
-        saveReservas(reservas);
-        reservaCreada = nueva;
-        notificarNuevaReserva(nueva).catch(console.error);
+        const errs = validarReserva(datos);
+        if (errs.length) {
+          console.warn('[Reserva] Datos inválidos:', errs);
+        } else {
+          const clave = `${sessionId}-${datos.fecha_inicio}-${datos.fecha_fin}-${datos.nombre}`;
+          if (!reservasDuplicadas.has(clave)) {
+            reservasDuplicadas.add(clave);
+            setTimeout(() => reservasDuplicadas.delete(clave), 60000);
+            const reservas = loadReservas();
+            const nueva = { id: Date.now(), ...datos, estado: 'confirmada', creadaEn: new Date().toISOString(), sessionId };
+            reservas.push(nueva);
+            saveReservas(reservas);
+            reservaCreada = nueva;
+            console.log('[Reserva] Creada:', nueva.nombre, nueva.vehiculo, nueva.fecha_inicio);
+          } else {
+            console.log('[Reserva] Duplicada ignorada para sesión', sessionId);
+          }
+        }
       }
     } catch (e) { console.error('Error parseando reserva:', e); }
   }
@@ -220,7 +277,10 @@ async function chatConAgente(sessionId, mensaje) {
 // ── Endpoints ─────────────────────────────────────────────────────────────────
 app.post('/api/chat', rateLimit, checkActive, async (req, res) => {
   const { sessionId, mensaje } = req.body;
-  if (!sessionId || !mensaje) return res.status(400).json({ error: 'Faltan parámetros' });
+  if (!sessionId || !mensaje || typeof mensaje !== 'string') {
+    return res.status(400).json({ error: 'Faltan parámetros' });
+  }
+  if (mensaje.length > 1000) return res.status(400).json({ error: 'Mensaje demasiado largo' });
   try {
     const resultado = await chatConAgente(sessionId, mensaje);
     res.json(resultado);
@@ -230,10 +290,11 @@ app.post('/api/chat', rateLimit, checkActive, async (req, res) => {
   }
 });
 
-app.get('/api/reservas', (req, res) => res.json(loadReservas()));
+app.get('/api/reservas', requireAdmin, (req, res) => res.json(loadReservas()));
 
 app.patch('/api/reservas/:id', requireAdmin, (req, res) => {
   const id = parseInt(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'ID inválido' });
   const reservas = loadReservas();
   const idx = reservas.findIndex(r => r.id === id);
   if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
@@ -243,11 +304,37 @@ app.patch('/api/reservas/:id', requireAdmin, (req, res) => {
 });
 
 app.delete('/api/reservas/:id', requireAdmin, (req, res) => {
-  saveReservas(loadReservas().filter(r => r.id !== parseInt(req.params.id)));
+  const id = parseInt(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'ID inválido' });
+  saveReservas(loadReservas().filter(r => r.id !== id));
   res.json({ ok: true });
 });
+
+// ── Instrucciones al agente ───────────────────────────────────────────────────
+app.get('/api/instrucciones', requireAdmin, (req, res) => res.json(loadInstrucciones()));
+
+app.post('/api/instrucciones', requireAdmin, (req, res) => {
+  const { texto } = req.body;
+  if (!texto?.trim()) return res.status(400).json({ error: 'Texto requerido' });
+  const instrucciones = loadInstrucciones();
+  const nueva = { id: Date.now(), texto: texto.trim(), creadaEn: new Date().toISOString() };
+  instrucciones.push(nueva);
+  saveInstrucciones(instrucciones);
+  res.json(nueva);
+});
+
+app.delete('/api/instrucciones/:id', requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'ID inválido' });
+  saveInstrucciones(loadInstrucciones().filter(i => i.id !== id));
+  res.json({ ok: true });
+});
+
+app.get('/api/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 
 const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => {
   console.log(`✅ Garma Automoción agente corriendo en http://localhost:${PORT}`);
+  console.log(`   Admin: http://localhost:${PORT}/admin.html`);
+  console.log(`   Data dir: ${DATA_DIR}`);
 });

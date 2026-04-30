@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Garma Automoción — Panel de Reservas</title>
+<title>Garma Automoción — Panel Admin</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: #0d1520; color: #e9edef; font-family: -apple-system, 'Segoe UI', sans-serif; min-height: 100vh; }
@@ -18,6 +18,11 @@
   .demo-btn { background: #0d2035; color: #2d6aa0; border: 1px solid #2d6aa0; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; text-decoration: none; transition: background 0.2s; }
   .demo-btn:hover { background: #2d6aa0; color: white; }
   main { padding: 24px; max-width: 1200px; margin: 0 auto; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid #1a3050; padding-bottom: 0; }
+  .tab { padding: 10px 20px; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px; font-weight: 600; color: #8696a0; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab.active { color: #2d6aa0; border-bottom-color: #2d6aa0; }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px; }
   .stat { background: #111d2e; border: 1px solid #1a3050; border-radius: 12px; padding: 20px; }
   .stat-label { font-size: 12px; color: #8696a0; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -38,7 +43,29 @@
   .action-btn:hover { background: #1a3050; }
   .empty { padding: 60px 24px; text-align: center; color: #8696a0; }
   .empty-icon { font-size: 48px; margin-bottom: 12px; }
-  .toast { position: fixed; bottom: 24px; right: 24px; background: #111d2e; border: 1px solid #2d6aa0; color: #e9edef; padding: 12px 20px; border-radius: 10px; font-size: 14px; display: none; }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: #111d2e; border: 1px solid #2d6aa0; color: #e9edef; padding: 12px 20px; border-radius: 10px; font-size: 14px; display: none; z-index: 1000; }
+  /* Modal */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 500; align-items: center; justify-content: center; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: #111d2e; border: 1px solid #1a3050; border-radius: 16px; padding: 28px; width: 480px; max-width: 95vw; }
+  .modal h3 { font-size: 18px; font-weight: 700; margin-bottom: 20px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: #8696a0; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .field input, .field select { width: 100%; background: #0d1828; border: 1px solid #1a3050; border-radius: 8px; padding: 9px 12px; color: #e9edef; font-size: 14px; }
+  .field input:focus, .field select:focus { outline: none; border-color: #2d6aa0; }
+  .modal-btns { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+  .btn-primary { background: #2d6aa0; color: white; border: none; border-radius: 8px; padding: 9px 20px; cursor: pointer; font-size: 14px; font-weight: 600; }
+  .btn-secondary { background: #1a3050; color: #e9edef; border: none; border-radius: 8px; padding: 9px 20px; cursor: pointer; font-size: 14px; }
+  /* Instrucciones */
+  .instruccion-item { background: #111d2e; border: 1px solid #1a3050; border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .instruccion-texto { font-size: 14px; line-height: 1.5; flex: 1; }
+  .instruccion-delete { background: none; border: none; color: #ff6b6b; cursor: pointer; font-size: 18px; padding: 2px 6px; border-radius: 6px; flex-shrink: 0; }
+  .instruccion-delete:hover { background: #3d1a1a; }
+  .add-instruccion { background: #111d2e; border: 1px solid #1a3050; border-radius: 12px; padding: 20px; margin-top: 20px; }
+  .add-instruccion textarea { width: 100%; background: #0d1828; border: 1px solid #1a3050; border-radius: 8px; padding: 10px 12px; color: #e9edef; font-size: 14px; font-family: inherit; resize: vertical; min-height: 80px; }
+  .add-instruccion textarea:focus { outline: none; border-color: #2d6aa0; }
+  .add-instruccion .btn-primary { margin-top: 10px; }
+  .info-box { background: #0d1828; border: 1px solid #1a3a5c; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 13px; color: #8696a0; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -47,7 +74,7 @@
     <div class="logo-icon">🚗</div>
     <div>
       <div class="logo-text">Garma Automoción</div>
-      <div class="logo-sub">Panel de Reservas de Alquiler</div>
+      <div class="logo-sub">Panel de Administración</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:16px">
@@ -56,49 +83,109 @@
   </div>
 </header>
 <main>
-  <div class="stats">
-    <div class="stat"><div class="stat-label">Total reservas</div><div class="stat-value" id="stat-total">0</div><div class="stat-sub">Gestionadas por IA</div></div>
-    <div class="stat"><div class="stat-label">Hoy</div><div class="stat-value" id="stat-hoy">0</div><div class="stat-sub">Nuevas reservas</div></div>
-    <div class="stat"><div class="stat-label">Confirmadas</div><div class="stat-value" id="stat-confirmadas">0</div><div class="stat-sub">Sin intervención humana</div></div>
-    <div class="stat"><div class="stat-label">Tasa éxito IA</div><div class="stat-value" id="stat-tasa">—</div><div class="stat-sub">Conversiones automáticas</div></div>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('reservas')">📋 Reservas</button>
+    <button class="tab" onclick="switchTab('instrucciones')">🤖 Instrucciones al agente IA</button>
   </div>
-  <div class="section-title">
-    Reservas de Alquiler
-    <button class="refresh-btn" onclick="cargarReservas()">↻ Actualizar</button>
+
+  <!-- TAB: RESERVAS -->
+  <div id="tab-reservas" class="tab-content active">
+    <div class="stats">
+      <div class="stat"><div class="stat-label">Total reservas</div><div class="stat-value" id="stat-total">0</div><div class="stat-sub">Gestionadas por IA</div></div>
+      <div class="stat"><div class="stat-label">Hoy</div><div class="stat-value" id="stat-hoy">0</div><div class="stat-sub">Nuevas reservas</div></div>
+      <div class="stat"><div class="stat-label">Confirmadas</div><div class="stat-value" id="stat-confirmadas">0</div><div class="stat-sub">Sin intervención humana</div></div>
+      <div class="stat"><div class="stat-label">Tasa éxito IA</div><div class="stat-value" id="stat-tasa">—</div><div class="stat-sub">Conversiones automáticas</div></div>
+    </div>
+    <div class="section-title">
+      Reservas de Alquiler
+      <button class="refresh-btn" onclick="cargarReservas()">↻ Actualizar</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Vehículo</th>
+            <th>Sede</th>
+            <th>Fecha inicio</th>
+            <th>Fecha fin</th>
+            <th>Cliente</th>
+            <th>Teléfono</th>
+            <th>Estado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div class="empty" id="empty">
+        <div class="empty-icon">🚗</div>
+        <div style="font-size:16px;margin-bottom:8px">Sin reservas todavía</div>
+        <div style="font-size:13px">Prueba el chat para crear una reserva de demo</div>
+      </div>
+    </div>
   </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Vehículo</th>
-          <th>Sede</th>
-          <th>Fecha inicio</th>
-          <th>Fecha fin</th>
-          <th>Cliente</th>
-          <th>Teléfono</th>
-          <th>Estado</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
-    <div class="empty" id="empty">
-      <div class="empty-icon">🚗</div>
-      <div style="font-size:16px;margin-bottom:8px">Sin reservas todavía</div>
-      <div style="font-size:13px">Prueba el chat para crear una reserva de demo</div>
+
+  <!-- TAB: INSTRUCCIONES -->
+  <div id="tab-instrucciones" class="tab-content">
+    <div class="info-box">
+      Añade aquí instrucciones para el agente IA. Por ejemplo: cambios de precio, vehículos no disponibles, promociones, instrucciones especiales de atención al cliente. El agente las aplicará en todas las conversaciones nuevas.
+    </div>
+    <div id="lista-instrucciones">
+      <div class="empty"><div class="empty-icon">🤖</div><div>Cargando instrucciones...</div></div>
+    </div>
+    <div class="add-instruccion">
+      <div style="font-size:15px;font-weight:600;margin-bottom:12px">Añadir nueva instrucción</div>
+      <textarea id="nueva-instruccion" placeholder="Ejemplo: El Opel Mokka no está disponible en Plasencia hasta el 15 de junio. Redirige a los clientes a Navalmoral de la Mata." maxlength="500"></textarea>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+        <button class="btn-primary" onclick="agregarInstruccion()">+ Añadir instrucción</button>
+        <span style="font-size:12px;color:#8696a0">Ctrl+Enter para añadir rápido</span>
+      </div>
     </div>
   </div>
 </main>
+
+<!-- Modal edición -->
+<div class="modal-overlay" id="modal-edit">
+  <div class="modal">
+    <h3>✏️ Editar reserva</h3>
+    <input type="hidden" id="edit-id">
+    <div class="field"><label>Vehículo</label><input id="edit-vehiculo" type="text"></div>
+    <div class="field"><label>Sede</label><input id="edit-sede" type="text"></div>
+    <div class="field"><label>Fecha inicio</label><input id="edit-fecha-inicio" type="date"></div>
+    <div class="field"><label>Fecha fin</label><input id="edit-fecha-fin" type="date"></div>
+    <div class="field"><label>Cliente</label><input id="edit-nombre" type="text"></div>
+    <div class="field"><label>Teléfono</label><input id="edit-telefono" type="tel"></div>
+    <div class="field"><label>Estado</label>
+      <select id="edit-estado">
+        <option value="confirmada">Confirmada</option>
+        <option value="cancelada">Cancelada</option>
+      </select>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn-primary" onclick="guardarEdicion()">Guardar cambios</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script>
   let reservas = [];
-  const ADMIN_PWD = localStorage.getItem('admin_pwd') || prompt('Contraseña de administrador:');
-  if (ADMIN_PWD) localStorage.setItem('admin_pwd', ADMIN_PWD);
+  const ADMIN_PWD = localStorage.getItem('garma_admin_pwd') || prompt('Contraseña de administrador:');
+  if (ADMIN_PWD) localStorage.setItem('garma_admin_pwd', ADMIN_PWD);
   const adminHeaders = { 'Content-Type': 'application/json', 'x-admin-password': ADMIN_PWD };
 
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', ['reservas','instrucciones'][i] === tab));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'instrucciones') cargarInstrucciones();
+  }
+
+  // ── Reservas ──────────────────────────────────────────────────────────────
   async function cargarReservas() {
     try {
-      const res = await fetch('/api/reservas');
+      const res = await fetch('/api/reservas', { headers: adminHeaders });
+      if (res.status === 401) { alert('Contraseña incorrecta'); return; }
       reservas = await res.json();
       renderTabla(); renderStats();
     } catch(e) { console.error(e); }
@@ -127,11 +214,45 @@
         <td>${r.telefono || '—'}</td>
         <td><span class="badge badge-${r.estado}">${r.estado}</span></td>
         <td>
+          <button class="action-btn" onclick="abrirEdicion(${r.id})" title="Editar">✏️</button>
           ${r.estado !== 'cancelada' ? `<button class="action-btn" onclick="cancelar(${r.id})" title="Cancelar">❌</button>` : ''}
           <button class="action-btn" onclick="eliminar(${r.id})" title="Eliminar">🗑️</button>
         </td>
       </tr>
     `).join('');
+  }
+
+  function abrirEdicion(id) {
+    const r = reservas.find(r => r.id === id);
+    if (!r) return;
+    document.getElementById('edit-id').value = r.id;
+    document.getElementById('edit-vehiculo').value = r.vehiculo || '';
+    document.getElementById('edit-sede').value = r.sede || '';
+    document.getElementById('edit-fecha-inicio').value = r.fecha_inicio || '';
+    document.getElementById('edit-fecha-fin').value = r.fecha_fin || '';
+    document.getElementById('edit-nombre').value = r.nombre || '';
+    document.getElementById('edit-telefono').value = r.telefono || '';
+    document.getElementById('edit-estado').value = r.estado || 'confirmada';
+    document.getElementById('modal-edit').classList.add('open');
+  }
+
+  function cerrarModal() {
+    document.getElementById('modal-edit').classList.remove('open');
+  }
+
+  async function guardarEdicion() {
+    const id = parseInt(document.getElementById('edit-id').value);
+    const body = {
+      vehiculo: document.getElementById('edit-vehiculo').value.trim(),
+      sede: document.getElementById('edit-sede').value.trim(),
+      fecha_inicio: document.getElementById('edit-fecha-inicio').value,
+      fecha_fin: document.getElementById('edit-fecha-fin').value,
+      nombre: document.getElementById('edit-nombre').value.trim(),
+      telefono: document.getElementById('edit-telefono').value.trim(),
+      estado: document.getElementById('edit-estado').value,
+    };
+    await fetch(`/api/reservas/${id}`, { method: 'PATCH', headers: adminHeaders, body: JSON.stringify(body) });
+    cerrarModal(); toast('Reserva actualizada'); cargarReservas();
   }
 
   async function cancelar(id) {
@@ -140,10 +261,51 @@
   }
 
   async function eliminar(id) {
-    if (!confirm('¿Eliminar esta reserva?')) return;
+    if (!confirm('¿Eliminar esta reserva definitivamente?')) return;
     await fetch(`/api/reservas/${id}`, { method: 'DELETE', headers: adminHeaders });
     toast('Reserva eliminada'); cargarReservas();
   }
+
+  // ── Instrucciones ─────────────────────────────────────────────────────────
+  async function cargarInstrucciones() {
+    try {
+      const res = await fetch('/api/instrucciones', { headers: adminHeaders });
+      const data = await res.json();
+      const lista = document.getElementById('lista-instrucciones');
+      if (!data.length) {
+        lista.innerHTML = '<div class="empty"><div class="empty-icon">📝</div><div>No hay instrucciones todavía</div></div>';
+        return;
+      }
+      lista.innerHTML = data.map(i => `
+        <div class="instruccion-item">
+          <div class="instruccion-texto">${i.texto}</div>
+          <button class="instruccion-delete" onclick="eliminarInstruccion(${i.id})" title="Eliminar">✕</button>
+        </div>
+      `).join('');
+    } catch(e) { console.error(e); }
+  }
+
+  async function agregarInstruccion() {
+    const texto = document.getElementById('nueva-instruccion').value.trim();
+    if (!texto) return;
+    await fetch('/api/instrucciones', { method: 'POST', headers: adminHeaders, body: JSON.stringify({ texto }) });
+    document.getElementById('nueva-instruccion').value = '';
+    toast('Instrucción añadida'); cargarInstrucciones();
+  }
+
+  async function eliminarInstruccion(id) {
+    if (!confirm('¿Eliminar esta instrucción?')) return;
+    await fetch(`/api/instrucciones/${id}`, { method: 'DELETE', headers: adminHeaders });
+    toast('Instrucción eliminada'); cargarInstrucciones();
+  }
+
+  document.getElementById('nueva-instruccion').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.ctrlKey) agregarInstruccion();
+  });
+
+  document.getElementById('modal-edit').addEventListener('click', e => {
+    if (e.target === document.getElementById('modal-edit')) cerrarModal();
+  });
 
   function toast(msg) {
     const el = document.getElementById('toast');
@@ -152,7 +314,7 @@
   }
 
   cargarReservas();
-  setInterval(cargarReservas, 5000);
+  setInterval(cargarReservas, 30000);
 </script>
 </body>
 </html>
