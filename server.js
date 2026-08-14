@@ -234,8 +234,9 @@ async function chatConAgente(sessionId, mensaje) {
   historial.push({ role: 'user', content: mensaje });
 
   const response = await client.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
-    max_tokens: 500,
+    model: 'openai/gpt-oss-120b', // llama-3.3-70b-versatile decomisionado por Groq el 16 ago 2026
+    reasoning_effort: 'low',
+    max_tokens: 650,
     messages: [{ role: 'system', content: getSystemPrompt() }, ...historial],
   });
 
